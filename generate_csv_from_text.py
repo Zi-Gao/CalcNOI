@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 
 # 原始纯文本数据
 raw_data_corrected = """
@@ -39,19 +40,16 @@ raw_data_corrected = """
 总数 960 3628 1781 1219 7588
 """
 
-# 这是将原始文本转换为标准化CSV所必需的一次性映射。
-# 此后的所有脚本将不再需要任何映射。
-PROVINCE_NAME_TO_CODE_MAP = {
-    '广东': 'GD', '浙江': 'ZJ', '山东': 'SD', '北京': 'BJ', '江苏': 'JS',
-    '四川': 'SC', '福建': 'FJ', '湖南': 'HN', '重庆': 'CQ', '上海': 'SH',
-    '安徽': 'AH', '河南': 'HA', '湖北': 'HB', '河北': 'HE', '陕西': 'SN',
-    '江西': 'JX', '山西': 'SX', '广西': 'GX', '辽宁': 'LN', '天津': 'TJ',
-    '贵州': 'GZ', '吉林': 'JL', '黑龙江': 'HL', '云南': 'YN', '新疆': 'XJ',
-    '海南': 'HI', '内蒙古': 'NM', '香港': 'HK', '甘肃': 'GS', '宁夏': 'NX',
-    '澳门': 'MO', '青海': 'QH', '总数': 'TOTAL'
-}
+def load_province_mapping(filepath="province_mapping.json"):
+    """从JSON文件加载省份名称到代码的映射。"""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"读取映射文件 '{filepath}' 出错: {e}")
+        return {}
 
-def generate_csv(output_filename="noip2025_participants.csv"):
+def generate_csv(province_map, output_filename="noip2025_participants.csv"):
     """
     从内置的原始文本数据生成CSV文件，使用省份代码作为第一列。
     """
@@ -69,7 +67,7 @@ def generate_csv(output_filename="noip2025_participants.csv"):
                 if line.strip():
                     row_data = line.strip().split()
                     province_name = row_data[0]
-                    province_code = PROVINCE_NAME_TO_CODE_MAP.get(province_name, province_name)
+                    province_code = province_map.get(province_name, province_name)
                     row_data[0] = province_code
                     writer.writerow(row_data)
         
@@ -80,4 +78,6 @@ def generate_csv(output_filename="noip2025_participants.csv"):
         return False
 
 if __name__ == "__main__":
-    generate_csv()
+    province_mapping = load_province_mapping()
+    if province_mapping:
+        generate_csv(province_mapping)

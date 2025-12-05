@@ -17,13 +17,13 @@ PAGES_TO_SCRAPE = 2
 # 保存结果的目录
 OUTPUT_DIR = "results"
 # 下载间隔范围（秒），每次下载会随机选择一个延迟
-MIN_DOWNLOAD_DELAY = 1
-MAX_DOWNLOAD_DELAY = 3
+MIN_DOWNLOAD_DELAY = 5
+MAX_DOWNLOAD_DELAY = 10
 
 # 重试配置
 MAX_RETRIES = 40000000               # 最大重试次数
-RETRY_BACKOFF_FACTOR = 5      # 重试等待时间的基数（秒）。第一次重试等待5s，第二次10s，第三次20s...
-RETRY_JITTER = 2              # 重试等待时间的随机抖动范围（秒）
+RETRY_BACKOFF_FACTOR = 8      # 重试等待时间的基数（秒）。第一次重试等待5s，第二次10s，第三次20s...
+RETRY_JITTER = 10              # 重试等待时间的随机抖动范围（秒）
 
 # 请求头
 HEADERS = {

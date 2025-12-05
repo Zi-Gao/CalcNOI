@@ -1,6 +1,7 @@
 import os
 import glob
 import math
+import json
 import pandas as pd
 from collections import defaultdict
 
@@ -14,6 +15,17 @@ P_MAX_RATIO = 0.05
 MAX_B_QUOTAS_PER_PROVINCE = 12
 A_QUOTA_BASE = 5
 # ==============================================================================
+
+def load_province_mapping(filepath="province_mapping.json"):
+    """从JSON文件加载省份名称到代码的映射，并返回一个代码到名称的反向映射。"""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            name_to_code = json.load(f)
+            # 创建并返回一个反向映射
+            return {code: name for name, code in name_to_code.items()}
+    except Exception as e:
+        print(f"读取映射文件 '{filepath}' 出错: {e}")
+        return {}
 
 def load_province_participants(filepath="noip2025_participants.csv"):
     """
@@ -63,15 +75,16 @@ def load_all_scores(results_dir="results"):
 
 def calculate_quotas():
     """
-    主计算函数 (无内置映射)。
+    主计算函数。
     """
-    print("--- 开始计算NOI2025省队名额 (无映射) ---")
+    print("--- 开始计算NOI2025省队名额 ---")
     
-    # 1. 加载数据 (两个数据源都使用省份代码作为键)
+    # 1. 加载数据
+    province_code_to_name = load_province_mapping()
     participants_data = load_province_participants()
     scores_data = load_all_scores()
 
-    if not participants_data or not scores_data:
+    if not participants_data or not scores_data or not province_code_to_name:
         print("数据加载不完整，无法继续计算。" )
         return
 
@@ -113,7 +126,8 @@ def calculate_quotas():
     for province_code in sorted(scores_data.keys()):
         participant_count = participants_data.get(province_code, 0)
         if participant_count == 0:
-            print(f"警告: 成绩文件中的省份 '{province_code}' 在参赛人数文件中未找到，跳过计算。" )
+            province_name = province_code_to_name.get(province_code, province_code)
+            print(f"警告: 成绩文件中的省份 '{province_name} ({province_code})' 在参赛人数文件中未找到，跳过计算。" )
             continue
 
         b1 = b1_quotas.get(province_code, 0)
@@ -124,7 +138,7 @@ def calculate_quotas():
         total_b = min(total_b, MAX_B_QUOTAS_PER_PROVINCE)
         
         final_results.append({
-            '省份代码': province_code,
+            '省份': province_code_to_name.get(province_code, province_code),
             'A类': A_QUOTA_BASE,
             'B1(计算)': f"{b1:.2f}",
             'B2(计算)': b2,
