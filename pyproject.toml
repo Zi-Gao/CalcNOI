@@ -1,0 +1,14 @@
+[project]
+name = "CalcNOI"
+version = "0.1.0"
+description = "A project to calculate NOI quotas and scrape contest results."
+authors = []
+dependencies = [
+    "requests",
+    "beautifulsoup4",
+    "pandas",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
