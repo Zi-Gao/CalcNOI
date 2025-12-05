@@ -27,24 +27,22 @@ def load_province_mapping(filepath="province_mapping.json"):
         print(f"读取映射文件 '{filepath}' 出错: {e}")
         return {}
 
-def load_province_participants(filepath="noip2025_participants.csv"):
+def load_province_participants_from_file(filepath="noip2025_participants.csv"):
     """
-    从CSV加载各省NOIP参赛人数。
-    假定CSV的第一列'省份代码'已包含正确的省份缩写。
+    从CSV加载各省NOIP官方参赛人数。
     """
     participants = {}
     try:
         df = pd.read_csv(filepath)
         df = df[df['省份代码'] != 'TOTAL']
-        # 假设 'B1' 列是参赛人数
-        participants = df.set_index('省份代码')['B1'].to_dict()
+        participants = df.set_index('省份代码')['A+B类总名额'].to_dict()
     except Exception as e:
         print(f"读取参赛人数文件 '{filepath}' 出错: {e}")
     return participants
 
 def load_all_scores(results_dir="results"):
     """
-    加载 results/ 目录下所有省份的成绩，并从'用户'列解析省份代码。
+    加载 results/ 目录下所有省份的**非零分**成绩。
     """
     all_scores = defaultdict(list)
     csv_files = glob.glob(os.path.join(results_dir, '*.csv'))
@@ -73,37 +71,49 @@ def load_all_scores(results_dir="results"):
         
     return all_scores
 
-def calculate_quotas():
+def load_all_participants_from_scores(results_dir="results"):
     """
-    主计算函数。
+    加载 results/ 目录下所有省份的**总**参赛人数 (包含零分)。
     """
-    print("--- 开始计算NOI2025省队名额 ---")
+    participant_counts = defaultdict(int)
+    csv_files = glob.glob(os.path.join(results_dir, '*.csv'))
     
-    # 1. 加载数据
-    province_code_to_name = load_province_mapping()
-    participants_data = load_province_participants()
-    scores_data = load_all_scores()
+    if not csv_files:
+        return {}
+        
+    all_dfs = [pd.read_csv(f) for f in csv_files]
+    combined_df = pd.concat(all_dfs, ignore_index=True)
 
-    if not participants_data or not scores_data or not province_code_to_name:
-        print("数据加载不完整，无法继续计算。" )
-        return
+    if '用户' not in combined_df.columns:
+        return {}
 
-    # 2. 计算全国总参赛人数
-    national_total_participants = sum(participants_data.values())
-    print(f"\n1. 全国总参赛人数 (来自participants文件): {national_total_participants}")
+    combined_df['province_code'] = combined_df['用户'].str.slice(0, 2)
+    participant_counts = combined_df.groupby('province_code').size().to_dict()
+        
+    return participant_counts
 
-    # 3. 计算B类名额
+def run_calculation(b1_participants_data, scores_data, province_code_to_name, title, source_msg, output_filename):
+    """
+    执行一次完整的配额计算并显示/保存结果。
+    """
+    print(f"\n{'='*80}\n--- {title} ---\n{'='*80}")
+
+    # 1. 计算全国总参赛人数
+    national_total_participants = sum(b1_participants_data.values())
+    print(f"1. B1所用全国总人数{source_msg}: {national_total_participants}")
+
+    # 2. 计算B类名额
     b1_quotas = {}
     b2_quotas = defaultdict(int)
     b3_quotas = defaultdict(int)
     
     # B1 计算
-    print(f"\n2. 计算 B1 ...")
-    for province_code, count in participants_data.items():
+    print(f"2. 计算 B1 ...")
+    for province_code, count in b1_participants_data.items():
         b1_share = (count / national_total_participants) if national_total_participants else 0
         b1_quotas[province_code] = S_TOTAL_B_QUOTAS * 0.5 * b1_share
 
-    # B2 计算
+    # B2 计算 (使用非零分成绩: scores_data)
     print(f"3. 计算 B2 ...")
     all_representative_scores = [{'province_code': pc, 'score': sum(s[i:i+math.ceil(len(s)/K1_SEGMENTS)])/len(s[i:i+math.ceil(len(s)/K1_SEGMENTS)])} for pc, s in scores_data.items() for i in range(0,len(s),math.ceil(len(s)/K1_SEGMENTS)) if s]
     all_representative_scores.sort(key=lambda x: x['score'], reverse=True)
@@ -111,7 +121,7 @@ def calculate_quotas():
     for item in all_representative_scores[:b2_award_count]:
         b2_quotas[item['province_code']] += 1
 
-    # B3 计算
+    # B3 计算 (使用非零分成绩: scores_data)
     print(f"4. 计算 B3 ...")
     all_excellent_scores = [{'province_code': pc, 'score': score} for pc, s in scores_data.items() for score in sorted(s, reverse=True)[:K2_TOP_SCORES]]
     all_excellent_scores.sort(key=lambda x: x['score'], reverse=True)
@@ -119,15 +129,12 @@ def calculate_quotas():
     for item in all_excellent_scores[:b3_award_count]:
         b3_quotas[item['province_code']] += 1
         
-    # 4. 汇总与约束
-    print("\n5. 汇总与约束应用 ...")
+    # 3. 汇总与约束
+    print("5. 汇总与约束应用 ...")
     final_results = []
-    # 以成绩数据中的省份为准进行计算和展示
     for province_code in sorted(scores_data.keys()):
-        participant_count = participants_data.get(province_code, 0)
-        if participant_count == 0:
-            province_name = province_code_to_name.get(province_code, province_code)
-            print(f"警告: 成绩文件中的省份 '{province_name} ({province_code})' 在参赛人数文件中未找到，跳过计算。" )
+        non_zero_participants = len(scores_data.get(province_code, []))
+        if non_zero_participants == 0:
             continue
 
         b1 = b1_quotas.get(province_code, 0)
@@ -135,7 +142,8 @@ def calculate_quotas():
         b3 = b3_quotas.get(province_code, 0)
         
         total_b = round(b1 + b2 + b3)
-        total_b = min(total_b, MAX_B_QUOTAS_PER_PROVINCE)
+        p_ratio_cap = math.floor(non_zero_participants * P_MAX_RATIO)
+        total_b = min(total_b, p_ratio_cap, MAX_B_QUOTAS_PER_PROVINCE)
         
         final_results.append({
             '省份': province_code_to_name.get(province_code, province_code),
@@ -147,19 +155,61 @@ def calculate_quotas():
             '总名额': A_QUOTA_BASE + total_b
         })
         
-    # 5. 显示结果
+    # 4. 显示和保存结果
     result_df = pd.DataFrame(final_results)
-    print("\n--- NOI2025省队名额计算结果 ---")
     print(result_df.to_string())
-
-    # 将结果保存到CSV文件
     try:
-        output_filename = "noi2025_calculated_quotas.csv"
         result_df.to_csv(output_filename, index=False, encoding='utf-8-sig')
         print(f"\n计算结果已成功保存到: {output_filename}")
     except Exception as e:
         print(f"\n保存结果到CSV文件时出错: {e}")
 
+def calculate_quotas():
+    """
+    主计算函数，协调三种不同的B1计算模式。
+    """
+    province_code_to_name = load_province_mapping()
+    scores_data_non_zero = load_all_scores()
+
+    if not scores_data_non_zero or not province_code_to_name:
+        print("核心数据加载不完整，无法继续计算。" )
+        return
+    
+    # 模式1: 使用官方公布的参赛总人数
+    participants_from_file = load_province_participants_from_file()
+    if participants_from_file:
+        run_calculation(
+            b1_participants_data=participants_from_file,
+            scores_data=scores_data_non_zero,
+            province_code_to_name=province_code_to_name,
+            title="模式1: B1基于官方参赛总人数",
+            source_msg=" (来自participants文件)",
+            output_filename="noi2025_quotas_official_participants.csv"
+        )
+
+    # 模式2: 使用测试成绩计算总人数 (含零分)
+    participants_from_scores_with_zeros = load_all_participants_from_scores()
+    if participants_from_scores_with_zeros:
+        run_calculation(
+            b1_participants_data=participants_from_scores_with_zeros,
+            scores_data=scores_data_non_zero,
+            province_code_to_name=province_code_to_name,
+            title="模式2: B1基于测试成绩总人数 (含零分)",
+            source_msg=" (来自成绩文件, 含零分)",
+            output_filename="noi2025_quotas_scores_with_zeros.csv"
+        )
+        
+    # 模式3: 使用测试成绩计算总人数 (不含零分)
+    participants_from_scores_no_zeros = {pc: len(s) for pc, s in scores_data_non_zero.items()}
+    if participants_from_scores_no_zeros:
+        run_calculation(
+            b1_participants_data=participants_from_scores_no_zeros,
+            scores_data=scores_data_non_zero,
+            province_code_to_name=province_code_to_name,
+            title="模式3: B1基于测试成绩总人数 (不含零分)",
+            source_msg=" (来自成绩文件, 非零分)",
+            output_filename="noi2025_quotas_scores_no_zeros.csv"
+        )
 
 if __name__ == "__main__":
     calculate_quotas()
